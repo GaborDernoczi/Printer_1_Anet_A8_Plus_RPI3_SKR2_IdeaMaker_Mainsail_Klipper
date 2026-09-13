@@ -1,0 +1,448 @@
+===============================================================================
+ANET A8 PLUS + RPI3 + SKR2 + KLIPPER/MAINSAIL + IDEAMAKER
+CALIBRATION LOG
+Date: 2026-09-13
+===============================================================================
+
+-------------------------------------------------------------------------------
+0. STARTING POINT
+-------------------------------------------------------------------------------
+Printer:    Anet A8 Plus, converted to SKR2 + Raspberry Pi 3B+
+Firmware:   Klipper
+Interface:  Mainsail
+Slicer:     IdeaMaker
+Probe:      BLTouch / 3D Touch (x_offset: -30, y_offset: -25)
+
+Test object: 50 x 50 x 50 mm calibration cube
+Source document:
+  Calibration/Printer1_ANET_A8_Plus_RPI3_SKR2_Ideamaker_Current_Profile.pdf
+  (23 pages, IdeaMaker profile screenshots + photos of the printed cube)
+
+PROBLEMS:
+  1) Dimensional inaccuracy on all three axes
+  2) "Edge problem" - bulging / oozing at the corners when the head turns
+     from the X direction into the Y direction
+
+
+-------------------------------------------------------------------------------
+1. MEASUREMENT RESULTS IN CHRONOLOGICAL ORDER
+-------------------------------------------------------------------------------
+
++---------+-----------+-----------+-----------+------------------------------+
+| Test    | X (mm)    | Y (mm)    | Z (mm)    | Settings                     |
++---------+-----------+-----------+-----------+------------------------------+
+| #1      | 48.63     | 49.76     | 50.21     | X rot.dist = 40.9            |
+|         | (-1.37)   | (-0.24)   | (+0.21)   | Y rot.dist = 40              |
+|         |           |           |           | z_offset = 1.15              |
+|         |           |           |           | no pressure_advance          |
+|         |           |           |           | max_accel = 3000             |
++---------+-----------+-----------+-----------+------------------------------+
+| #2      | 49.74     | 49.79     | 50.17     | X rot.dist = 40  (fixed)     |
+|         | (-0.26)   | (-0.21)   | (+0.17)   | Y rot.dist = 40              |
+|         |           |           |           | z_offset = 1.15              |
+|         |           |           |           | pressure_advance = 0.05      |
+|         |           |           |           | max_accel = 1500             |
++---------+-----------+-----------+-----------+------------------------------+
+| #3      | 49.94     | 49.97     | 50.06     | X rot.dist = 40              |
+|         | (-0.06)   | (-0.03)   | (+0.06)   | Y rot.dist = 40              |
+|         |           |           |           | z_offset = 1.25 (+0.10)      |
+|         |           |           |           | pressure_advance = 0.05      |
+|         |           |           |           | max_accel = 1500             |
++---------+-----------+-----------+-----------+------------------------------+
+
+EVALUATION OF TEST #3
+---------------------
+All three axes are within 0.1 mm. This is already a VERY GOOD result:
+  X: -0.12 %
+  Y: -0.06 %
+  Z: +0.12 %
+For comparison, the X error in test #1 was -2.74 %.
+
+Z: the prediction was 50.07, the actual value is 50.06 -> the model works
+   exactly as expected.
+
+X/Y: UNEXPECTED IMPROVEMENT. Compared to #2, X grew by +0.20 mm and
+Y by +0.18 mm, even though only the z_offset changed in printer.cfg.
+TWO POSSIBLE EXPLANATIONS:
+  a) XY Size Compensation was set in IdeaMaker in the meantime
+     (+0.12 mm -> that is +0.24 mm across two sides, which matches the
+      measured +0.18...+0.20 mm improvement well)  <- THIS IS LIKELY
+  b) The larger squish changed the widening of the first layer
+     (elephant foot), and the measurement captured that
+
+TO BE CLARIFIED: check the XY Size Compensation value in the IdeaMaker
+profile and record it here. Without it we do not know what must not be
+changed.
+
+
+-------------------------------------------------------------------------------
+2. DIAGNOSIS - X AXIS ERROR (SOLVED)
+-------------------------------------------------------------------------------
+
+First assumption (it was WRONG):
+  The -2.74 % X error is mechanical (loose belt, slipping pulley).
+
+Correction, after it turned out that X rot.dist was 40.9 during the test:
+
+  Formula:  measured = 50 x RD_actual / RD_configured
+
+  X:  48.63 = 50 x RD / 40.9  ->  RD_actual = 39.78
+  Y:  49.76 = 50 x RD / 40.0  ->  RD_actual = 39.81
+
+  The two axes are practically identical -> THERE IS NO mechanical fault.
+  The whole deviation was caused by the incorrectly entered 40.9.
+
+SOLUTION: X rotation_distance = 40 (theoretical value for a 16-tooth GT2
+          pulley)
+STATUS:   DONE - confirmed by test #2 (prediction 49.73 / actual 49.74)
+
+
+-------------------------------------------------------------------------------
+3. DIAGNOSIS - REMAINING X/Y ERROR (IN PROGRESS)
+-------------------------------------------------------------------------------
+
+After test #2:
+  X error: -0.26 mm (-0.52 %)
+  Y error: -0.21 mm (-0.42 %)
+  Average: -0.235 mm
+
+The two axes are within 0.05 mm of each other -> symmetric error.
+The rotation_distance MUST NOT BE TOUCHED ANY MORE, this is not a
+stepper error.
+
+Possible causes:
+  a) Slicer outer wall extrusion width -> FIXED offset error
+  b) PLA thermal shrinkage (~0.3-0.5 %) -> PROPORTIONAL (scale) error
+
+SOLUTION for case "a":
+  IdeaMaker -> Quality -> XY Size Compensation for Contours: +0.12 mm
+  (half of the error, because it appears on two sides: 0.235 / 2)
+  Expected result: X ~49.98 / Y ~50.03
+
+SOLUTION for case "b":
+  Scale the model to 100.45 %
+
+HOW TO TELL THEM APART:
+  Print a 100 x 20 x 1 mm bar.
+    - If the shortfall is ~0.24 mm -> FIXED offset -> keep the +0.12 mm
+      compensation
+    - If the shortfall is ~0.46 mm -> SHRINKAGE -> scaling is needed instead
+
+STATUS: NOT DONE YET
+
+
+-------------------------------------------------------------------------------
+4. DIAGNOSIS - Z AXIS (IN PROGRESS)
+-------------------------------------------------------------------------------
+
+IMPORTANT PRINCIPLE:
+  The Z error does NOT come from stepper_z rotation_distance!
+  Because of the TR8x8 lead screw, rotation_distance = 8 is mathematically
+  exact, and it must NEVER be modified.
+
+  From the second layer on, every layer is accurate. ALL height error is
+  created in the FIRST LAYER: if the nozzle is too high, the first layer
+  is thicker than nominal, and this is added as a constant error to the
+  whole model.
+
+  -> The solution is always the [bltouch] z_offset.
+
+SIGN RULE IN KLIPPER:
+  LARGER z_offset = the nozzle is CLOSER to the bed = MORE squish
+                  = the printed part will be SHORTER
+
+CALCULATION:
+  Test #1: 50.21 mm with z_offset 1.15 -> +0.21 correction would be needed
+  Test #2: 50.17 mm with z_offset 1.15 -> +0.17 correction would be needed
+  Ideal value is therefore: 1.15 + 0.17 = 1.32
+
+APPLIED STEP:
+  z_offset 1.15 -> 1.25 (only +0.10, a cautious approach to protect the bed)
+  Expected #3 result: Z ~50.07 mm
+  ACTUAL #3 result: 50.06 mm -> the prediction was correct
+
+POSSIBLE FURTHER FINE-TUNING (optional):
+  For the remaining +0.06 mm, z_offset 1.25 -> 1.31 would be needed.
+  BUT: 0.06 mm is already within the error margin of the caliper and the
+  surface roughness, and more squish can cause elephant foot.
+  RECOMMENDATION: LEAVE IT AT 1.25.
+
+STATUS: DONE (within acceptable error margin)
+
+
+-------------------------------------------------------------------------------
+5. Z-OFFSET CALIBRATION - STEP BY STEP (REFERENCE)
+-------------------------------------------------------------------------------
+
+PREPARATION
+  - Bed heated to operating temperature (e.g. 60 C for PLA)
+  - Nozzle at ~150 C (important because of thermal expansion!)
+  - Nozzle must be clean
+  - Sheet of paper ready (~0.1 mm)
+
+STEPS (Mainsail console)
+  1.  G28
+  2.  PROBE_CALIBRATE
+      -> the BLTouch probes, the head moves aside and lowers
+      -> the "Z Offset Calibration" panel appears with + / - buttons
+  3.  TESTZ Z=-0.17          (or on the panel: -0.05 x3 and -0.02 x1)
+  4.  Paper test:
+        Good:       it slides, but you can feel it scratching
+        Too loose:  TESTZ Z=-0.02
+        Too tight:  TESTZ Z=+0.02
+  5.  ACCEPT
+      -> the console prints: "bltouch: z_offset: 1.320"
+  6.  SAVE_CONFIG
+      NOTE: this RESTARTS Klipper, that is normal!
+  7.  Verification: the SAVE_CONFIG block should contain
+        #*# [bltouch]
+        #*# z_offset = 1.320
+  8.  Redo the bed mesh (the Z reference has changed):
+        G28
+        BED_MESH_CALIBRATE
+        SAVE_CONFIG
+  9.  Reprint the test cube
+
+BAILING OUT: the ABORT command at any time, without saving
+
+WARNING:
+  Once SAVE_CONFIG has run, the z_offset value at the TOP of the file becomes
+  ineffective - the SAVE_CONFIG block always overrides it. Do not be surprised
+  that the old number stays there.
+
+  If you want to edit the top of the file MANUALLY: first DELETE the
+  "#*# [bltouch]" and "#*# z_offset = ..." lines from the SAVE_CONFIG block,
+  then run FIRMWARE_RESTART.
+
+
+-------------------------------------------------------------------------------
+6. SYMPTOM: MAINSAIL DISPLAYED -4.85
+-------------------------------------------------------------------------------
+
+CASE: While adjusting the Z offset, Mainsail showed a value of -4.85.
+      The user (correctly) did not start the movement.
+
+EXPLANATION:
+  What was shown is NOT the offset, but the CURRENT Z POSITION OF THE HEAD.
+  This appears when you look at the dashboard "Z offset" live adjust field
+  instead of the dedicated PROBE_CALIBRATE panel.
+  The two are SEPARATE things.
+
+RULE: if you see a Z below -4 before a movement, always stop.
+
+
+-------------------------------------------------------------------------------
+7. CORNER OOZING ("EDGE PROBLEM") - IN PROGRESS
+-------------------------------------------------------------------------------
+
+CAUSE:
+  - Pressure Advance was not configured either in IdeaMaker or in Klipper
+  - Acceleration and Jerk are disabled in the slicer (this is good, Klipper
+    handles them), but Klipper's 3000 mm/s^2 acceleration is too much for
+    the acrylic frame
+
+APPLIED SETTINGS (printer.cfg):
+  [extruder]
+    pressure_advance: 0.05
+    pressure_advance_smooth_time: 0.040
+  [printer]
+    max_accel: 1500              (instead of 3000)
+    square_corner_velocity: 5.0
+
+NEXT STEP - PA CALIBRATION based on the evaluation of print #3:
+  - If improved but still faulty  -> go towards 0.07 ... 0.10
+  - If nothing changed            -> probably a BOWDEN setup -> 0.4 ... 0.8
+  - If the corners now pull in (under-extrusion in turns) -> back to 0.03
+  - If the corners still ooze after PA -> square_corner_velocity 5.0 -> 3.0
+
+Official guide: https://www.klipper3d.org/Pressure_Advance.html
+
+STATUS: AWAITING EVALUATION
+
+
+-------------------------------------------------------------------------------
+8. PRINTER.CFG - CHANGES ALREADY MADE
+-------------------------------------------------------------------------------
+
+(VERIFIED AGAINST THE RUNNING printer.cfg: 2026-09-13)
+
+[stepper_x]
+  rotation_distance:  40.9  ->  40          (fix for the X dimension error)
+
+[extruder]
+  rotation_distance: 33.500 -> 35.845       (E-step calibration, see sect. 11)
+  control/pid_K*: COMMENTED OUT in the top section, the values live in the
+                  SAVE_CONFIG block (39.518 / 3.421 / 114.109)
+  min_temp:            0    ->  10          (at 0 Klipper does not detect a
+                                             detached thermistor)
+  max_extrude_only_distance:  -  ->  150    (without it "G1 E100" errors out
+                                             during extruder calibration,
+                                             the default is only 50 mm)
+  pressure_advance:           -  ->  0.05   (against corner oozing)
+  pressure_advance_smooth_time: - -> 0.040
+
+[heater_bed]
+  min_temp:            0    ->  10          (thermistor protection)
+
+[printer]
+  max_accel:        3000    ->  1500        (acrylic frame + ringing)
+  square_corner_velocity:  - ->  5.0        (stated explicitly, this is the
+                                             default value)
+
+[bltouch]
+  z_offset:         1.15    ->  1.25        (fix for the Z dimension error,
+                                             a cautious step; the calculated
+                                             ideal is 1.32)
+  The "#*# [bltouch]" section in the SAVE_CONFIG block is EMPTY (it holds no
+  z_offset line), therefore the 1.25 at the top of the file is the EFFECTIVE
+  value.
+
+
+-------------------------------------------------------------------------------
+9. PRINTER.CFG - STILL OPEN ITEMS
+-------------------------------------------------------------------------------
+
+(A) HOTEND PID CALIBRATION  -- DONE, 2026-09-13
+    Original (Klipper stock example value, never calibrated):
+      pid_Kp = 22.2    pid_Ki = 1.08    pid_Kd = 114
+
+    PID_CALIBRATE HEATER=extruder TARGET=<printing temperature>
+    SAVE_CONFIG
+
+    Measured values:
+      pid_Kp = 39.518  pid_Ki = 3.421   pid_Kd = 114.109
+
+    DEVIATION:
+      Kp: +78 %
+      Ki: +217 %   <-- THIS IS THE KEY ONE
+      Kd: ~0 %
+
+    EVALUATION:
+    Ki was set more than three times lower than required. The integral term
+    is responsible for eliminating steady-state error; if it is too small,
+    the heater follows the target sluggishly and with overshoots -> slow
+    temperature oscillation -> fluctuating viscosity -> WAVY, UNEVEN WALL.
+    This explains the moire-like pattern seen on the right-hand face in the
+    "test #3" photo.
+
+    IN THE RUNNING CFG: the values are in the [extruder] section of the
+    SAVE_CONFIG block, and the control/pid_K* lines at the top of the file
+    are commented out. This is the CORRECT state - do not uncomment them,
+    because the SAVE_CONFIG block would override them anyway.
+
+    STATUS: DONE
+
+(B) [heater_fan fan2] (PB5)
+    No "heater:" is specified, so by default it is tied to the extruder.
+    If this is actually a mainboard cooling fan, it should be a
+    [temperature_fan] instead, otherwise it only spins when the hotend is hot.
+
+(C) LEFTOVER IN THE SAVE_CONFIG BLOCK
+      #*# [stepper_z]
+      #*# position_endstop = 0.300
+    Leftover from when there was still a physical Z endstop. Since
+    "probe:z_virtual_endstop" is used now, Klipper ignores it.
+    It causes no error, but it can be deleted after the next SAVE_CONFIG.
+
+(D) NO INPUT SHAPER
+    It would be worth configuring against ringing / ghosting, based on an
+    accelerometer or a ringing test tower.
+
+
+-------------------------------------------------------------------------------
+10. IDEAMAKER - SUGGESTED CHANGES
+-------------------------------------------------------------------------------
+
+DIMENSIONAL ACCURACY:
+  Quality -> XY Size Compensation for Contours:  0  ->  +0.12 mm
+             (finalize it only after the 100 mm test! see section 3)
+
+CORNER OOZING:
+  Extruder -> Coasting Distance:        0  ->  0.2 mm
+  Quality  -> Outer Shell Flowrate:   100  ->  95 %
+  Speed    -> Outer Shell:             35  ->  25 mm/s (until PA is done)
+
+GENERAL QUALITY:
+  Layer Height: 0.3 mm -> 0.2 mm
+    (0.3 mm is the upper limit for a 0.4 mm nozzle; switching to 0.2 improves
+     Z accuracy and the corners a lot)
+
+LEAVE UNCHANGED:
+  Advanced -> Acceleration and Jerk must stay DISABLED
+              (it is correct that Klipper handles them)
+
+
+-------------------------------------------------------------------------------
+11. EXTRUDER CALIBRATION (E-STEP) -- DONE 2026-09-13
+-------------------------------------------------------------------------------
+
+This is the "real root cause" behind the flow / dimension / corner issues.
+
+MEASUREMENT:
+  Mark:              120 mm at the extruder inlet
+  Command:           G1 E100 F60
+  Remaining mark:    13 mm
+  Actually fed:      120 - 13 = 107 mm
+
+CALCULATION:
+  RD_new = 33.500 x (107 / 100) = 35.845
+
+RESULT:
+  rotation_distance:  33.500  ->  35.845
+  The extruder was pushing 7 % MORE material than required on ALL prints
+  so far.
+
+CONSEQUENCES:
+  - This directly explains the CORNER OOZING: material already piles up in
+    a turn, and on top of that there was a 7 % surplus.
+  - It also contributed to the wavy wall (together with the bad PID).
+  - THE CUBE DIMENSIONS WILL CHANGE! Because of the reduced material the
+    walls become thinner -> the outer dimension may shrink slightly.
+    -> The dimensional calibration (XY Size Compensation) MUST BE
+       RE-EVALUATED.
+
+IMPORTANT: if a Flowrate < 100 % or an XY Size Compensation is set in
+IdeaMaker, it is now worth RESETTING them to default, because they were
+compensating for the 7 % over-extrusion. Otherwise there will now be
+under-extrusion.
+
+STEPS TO REPEAT THE PROCEDURE:
+  1. Heat the hotend to printing temperature
+  2. Mark 120 mm on the filament at the extruder inlet
+  3. G1 E100 F60        (slowly! that is why max_extrude_only_distance was
+                         needed)
+  4. Measure how much of the mark is left
+  5. new_value = old_value x (actual / 100)
+  6. Write it into printer.cfg, then run FIRMWARE_RESTART
+
+
+-------------------------------------------------------------------------------
+12. RECOMMENDED ORDER OF THE NEXT STEPS
+-------------------------------------------------------------------------------
+
+  1. [DONE] Measuring print #3: X 49.94 / Y 49.97 / Z 50.06
+  2. [DONE] Z-offset: 1.25 accepted, stays
+  3. [DONE] X rotation_distance: 40, stays
+  4. [DONE] There is no elephant foot - the bottom rim was the SKIRT
+            (2 loops). The #3 dimensions are genuine, z_offset 1.25 is
+            correct.
+  5. [DONE] Hotend PID calibration -> 39.518 / 3.421 / 114.109 (in the cfg)
+  6. [DONE] Extruder rotation_distance 33.500 -> 35.845 (in the cfg)
+  7. --> NEXT: IdeaMaker Layer Height 0.3 -> 0.2 mm (the main cause of the
+            layering), plus resetting Flowrate / XY Size Compensation to
+            default now that the 7 % over-extrusion is gone (see section 11)
+  8. New cube: evaluate dimensions + corners + layering
+  9. Only if still needed: Pressure Advance tuning tower (section 7)
+ 10. 100 mm test bar -> offset or shrinkage? (section 3)
+ 11. Final verification cube
+
+THE DIMENSIONAL CALIBRATION IS PRACTICALLY CLOSED - all three axes are
+below 0.1 mm. The remaining work is about SURFACE QUALITY, not dimensions.
+
+IMPORTANT: always change ONLY ONE thing between two tests, otherwise you
+cannot tell which modification did what.
+
+
+===============================================================================
+END
+===============================================================================
