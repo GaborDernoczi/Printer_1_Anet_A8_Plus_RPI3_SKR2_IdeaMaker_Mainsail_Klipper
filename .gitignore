@@ -1,0 +1,24 @@
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors and IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*~
+
+# Logs and local runtime files
+*.log
+*.pid
+
+# Local documents
+Calibration_2.loop/Copilot_Chat_Sessions 1.loop.docx
+Calibration_2.loop/Kalibracio_2_kor_elemzes_es_javaslatok_HU.docx
